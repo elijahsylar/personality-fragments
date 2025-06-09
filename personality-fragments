@@ -1,0 +1,255 @@
+import random
+import time
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
+
+@dataclass
+class EmotionalState:
+    """Represents an agent's emotional state with 4 key parameters"""
+    mood: float      # -1 (negative) to 1 (positive)
+    energy: float    # 0 (low) to 1 (high)
+    confidence: float # 0 (unsure) to 1 (assertive)
+    openness: float  # 0 (closed) to 1 (receptive)
+    
+    def update(self, delta: Dict[str, float]):
+        """Update emotional state with bounded values"""
+        self.mood = max(-1, min(1, self.mood + delta.get('mood', 0)))
+        self.energy = max(0, min(1, self.energy + delta.get('energy', 0)))
+        self.confidence = max(0, min(1, self.confidence + delta.get('confidence', 0)))
+        self.openness = max(0, min(1, self.openness + delta.get('openness', 0)))
+
+class Agent:
+    """A conversational agent with personality and emotional state"""
+    
+    def __init__(self, name: str, personality: Dict[str, any]):
+        self.name = name
+        self.personality = personality
+        self.state = EmotionalState(
+            mood=personality['base_mood'],
+            energy=personality['base_energy'],
+            confidence=personality['base_confidence'],
+            openness=personality['base_openness']
+        )
+        self.memory = []  # Recent conversation memory
+        
+    def generate_response(self, context: List[str], topic: str) -> str:
+        """Generate response based on personality and emotional state"""
+        # Response templates based on personality type
+        templates = self.personality['templates']
+        
+        # Select template based on emotional state
+        if self.state.mood > 0.5 and self.state.energy > 0.5:
+            response_type = 'enthusiastic'
+        elif self.state.mood < -0.3:
+            response_type = 'pessimistic'
+        elif self.state.confidence > 0.7:
+            response_type = 'assertive'
+        elif self.state.openness > 0.7:
+            response_type = 'curious'
+        else:
+            response_type = 'neutral'
+            
+        # Build response
+        template = random.choice(templates.get(response_type, templates['neutral']))
+        response = template.format(topic=topic, name=self.name)
+        
+        # Add personality flavor
+        if self.personality['style'] == 'analytical':
+            response += f" Let me analyze this: {random.choice(['the data suggests', 'logically speaking', 'if we consider'])}"
+        elif self.personality['style'] == 'creative':
+            response += f" {random.choice(['Imagine if', 'What if we', 'Picture this'])}"
+        elif self.personality['style'] == 'practical':
+            response += f" {random.choice(['In practice', 'The real issue is', 'Practically speaking'])}"
+            
+        return response
+    
+    def react_to_message(self, speaker: str, message: str, sentiment: float):
+        """Update emotional state based on another agent's message"""
+        # Base reaction depends on relationship and message sentiment
+        impact = self.personality['reaction_weights']
+        
+        # Adjust mood based on message sentiment
+        self.state.update({'mood': sentiment * impact['mood'] * 0.3})
+        
+        # Energy changes based on engagement
+        if 'exciting' in message.lower() or '!' in message:
+            self.state.update({'energy': impact['energy'] * 0.2})
+        elif 'tired' in message.lower() or 'boring' in message.lower():
+            self.state.update({'energy': -impact['energy'] * 0.2})
+            
+        # Confidence affected by agreement/disagreement
+        if 'agree' in message.lower() or 'right' in message.lower():
+            self.state.update({'confidence': 0.1})
+        elif 'disagree' in message.lower() or 'wrong' in message.lower():
+            self.state.update({'confidence': -0.15})
+            
+        # Openness changes with conversation flow
+        if '?' in message:
+            self.state.update({'openness': 0.1})
+
+class ConversationManager:
+    """Manages multi-agent conversations with emergent dynamics"""
+    
+    def __init__(self, agents: List[Agent]):
+        self.agents = agents
+        self.conversation_history = []
+        self.turn_count = 0
+        
+    def select_next_speaker(self, last_speaker: Agent = None) -> Agent:
+        """Select next speaker based on emotional states and dynamics"""
+        # Calculate speaking probability for each agent
+        probabilities = []
+        
+        for agent in self.agents:
+            if agent == last_speaker:
+                # Reduce chance of same speaker
+                prob = 0.1
+            else:
+                # Base probability on energy and confidence
+                prob = (agent.state.energy * 0.5 + agent.state.confidence * 0.3 + 0.2)
+                
+                # Adjust based on mood
+                if agent.state.mood < -0.5:
+                    prob *= 0.5  # Withdrawn when very negative
+                elif agent.state.mood > 0.5:
+                    prob *= 1.3  # More talkative when positive
+                    
+            probabilities.append(prob)
+            
+        # Normalize and select
+        total = sum(probabilities)
+        probabilities = [p/total for p in probabilities]
+        return random.choices(self.agents, weights=probabilities)[0]
+    
+    def analyze_sentiment(self, message: str) -> float:
+        """Simple sentiment analysis"""
+        positive_words = ['great', 'excellent', 'love', 'wonderful', 'fantastic', 'agree', 'yes']
+        negative_words = ['hate', 'terrible', 'awful', 'disagree', 'no', 'wrong', 'bad']
+        
+        score = 0
+        for word in positive_words:
+            if word in message.lower():
+                score += 0.3
+        for word in negative_words:
+            if word in message.lower():
+                score -= 0.3
+                
+        return max(-1, min(1, score))
+    
+    def run_conversation(self, topic: str, turns: int = 10):
+        """Run a multi-agent conversation"""
+        print(f"\n=== Topic: {topic} ===\n")
+        
+        # Initial speaker
+        current_speaker = random.choice(self.agents)
+        
+        for turn in range(turns):
+            # Generate response
+            context = self.conversation_history[-5:] if self.conversation_history else []
+            message = current_speaker.generate_response(context, topic)
+            
+            # Display message with emotional state
+            print(f"{current_speaker.name} [mood:{current_speaker.state.mood:.1f}, "
+                  f"energy:{current_speaker.state.energy:.1f}]: {message}")
+            
+            # Record in history
+            self.conversation_history.append(f"{current_speaker.name}: {message}")
+            
+            # Other agents react
+            sentiment = self.analyze_sentiment(message)
+            for agent in self.agents:
+                if agent != current_speaker:
+                    agent.react_to_message(current_speaker.name, message, sentiment)
+            
+            # Select next speaker
+            time.sleep(0.5)  # Dramatic pause
+            current_speaker = self.select_next_speaker(current_speaker)
+            
+        # Show final emotional states
+        print("\n=== Final Emotional States ===")
+        for agent in self.agents:
+            print(f"{agent.name}: mood={agent.state.mood:.2f}, energy={agent.state.energy:.2f}, "
+                  f"confidence={agent.state.confidence:.2f}, openness={agent.state.openness:.2f}")
+
+# Define agent personalities
+PERSONALITIES = {
+    "Alex": {
+        "style": "analytical",
+        "base_mood": 0.2, "base_energy": 0.6, "base_confidence": 0.8, "base_openness": 0.4,
+        "reaction_weights": {"mood": 0.6, "energy": 0.7},
+        "templates": {
+            "enthusiastic": ["This is fascinating! {topic} has so many implications"],
+            "pessimistic": ["I'm not sure {topic} will work out as planned"],
+            "assertive": ["Based on the evidence, {topic} clearly shows"],
+            "curious": ["But what about the underlying mechanics of {topic}?"],
+            "neutral": ["Regarding {topic}, we should consider the facts"]
+        }
+    },
+    "Blake": {
+        "style": "creative",
+        "base_mood": 0.7, "base_energy": 0.8, "base_confidence": 0.5, "base_openness": 0.9,
+        "reaction_weights": {"mood": 0.9, "energy": 0.8},
+        "templates": {
+            "enthusiastic": ["Oh wow! {topic} opens up amazing possibilities!"],
+            "pessimistic": ["But {topic} feels so limiting sometimes"],
+            "assertive": ["I believe {topic} is all about perspective!"],
+            "curious": ["What if {topic} could be completely reimagined?"],
+            "neutral": ["There's something poetic about {topic}"]
+        }
+    },
+    "Casey": {
+        "style": "practical",
+        "base_mood": 0.0, "base_energy": 0.5, "base_confidence": 0.7, "base_openness": 0.5,
+        "reaction_weights": {"mood": 0.5, "energy": 0.6},
+        "templates": {
+            "enthusiastic": ["Finally, some progress on {topic}!"],
+            "pessimistic": ["The challenges with {topic} are significant"],
+            "assertive": ["Look, {topic} needs concrete solutions"],
+            "curious": ["How would {topic} work in the real world?"],
+            "neutral": ["Let's focus on the practical aspects of {topic}"]
+        }
+    },
+    "Dana": {
+        "style": "empathetic",
+        "base_mood": 0.5, "base_energy": 0.4, "base_confidence": 0.3, "base_openness": 0.8,
+        "reaction_weights": {"mood": 1.0, "energy": 0.5},
+        "templates": {
+            "enthusiastic": ["I love how {topic} brings us together!"],
+            "pessimistic": ["I worry about how {topic} affects everyone"],
+            "assertive": ["We must consider how {topic} impacts people"],
+            "curious": ["How does everyone feel about {topic}?"],
+            "neutral": ["I think {topic} means different things to different people"]
+        }
+    },
+    "Evan": {
+        "style": "contrarian",
+        "base_mood": -0.2, "base_energy": 0.7, "base_confidence": 0.9, "base_openness": 0.3,
+        "reaction_weights": {"mood": 0.3, "energy": 0.9},
+        "templates": {
+            "enthusiastic": ["Surprisingly, {topic} might actually work!"],
+            "pessimistic": ["As expected, {topic} is deeply flawed"],
+            "assertive": ["Everyone's wrong about {topic}, here's why"],
+            "curious": ["Has anyone questioned the assumptions about {topic}?"],
+            "neutral": ["I have concerns about {topic}"]
+        }
+    }
+}
+
+# Example usage
+if __name__ == "__main__":
+    # Create agents
+    agents = [Agent(name, personality) for name, personality in PERSONALITIES.items()]
+    
+    # Create conversation manager
+    manager = ConversationManager(agents)
+    
+    # Run conversations on different topics
+    topics = [
+        "artificial intelligence ethics",
+        "the future of creativity",
+        "building sustainable communities"
+    ]
+    
+    for topic in topics:
+        manager.run_conversation(topic, turns=8)
+        print("\n" + "="*50 + "\n")
