@@ -35,7 +35,7 @@ Personality Fragments demonstrates how simple emotional models and personality t
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/personality-fragments.git
+git clone https://github.com/yelijahsylar/personality-fragments.git
 cd personality-fragments
 
 # No external dependencies required! Uses only Python standard library
